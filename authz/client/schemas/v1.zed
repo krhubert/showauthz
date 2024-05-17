@@ -1,0 +1,168 @@
+// products takes a list of enabled and required products and a boolean oneOf.
+// 
+// if oneOf is true, then only at least one of the required products needs to be enabled
+// otherwise, all required products need to be enabled.
+//
+// NOTE: "enabled" is stored in the spicedb caveat context, 
+// whereas required and oneOf are passed in a request context by caller.
+caveat products(enabled list<string>, required list<string>, oneOf bool) {
+  oneOf && required.exists(product, product in enabled) || 
+        required.all(product, product in enabled)
+}
+
+// chameleon_email returns true if user has email within rift organization.
+caveat chameleon_email(email string) {
+    email.endsWith("@rift.com") || email.endsWith("@getrift.com")
+}
+
+definition user {}
+
+definition platform {
+    relation chameleoner: user with chameleon_email
+    permission chameleon = chameleoner
+}
+
+definition apikey {}
+
+definition member {}
+
+definition organization {
+    // api key access
+    relation apikey: apikey
+
+    // role based access
+    relation admin: member with products
+    relation sdr: member with products
+
+    permission access = admin + sdr
+
+    // settings permissions
+    // NOTE: settings are organization wide and there's no resource level permissions
+    permission edit_settings = admin
+    permission view_settings = edit_settings + sdr
+
+    // member permissions - allow to invite and delete other members
+    // NOTE: for other resources, delete permission is defined at the resource level
+    // but members are part of organization and to avoid circular dependencies
+    // delete and edit permissions are defined here.
+    permission invite_member = admin
+    permission edit_member = admin
+    permission delete_member = admin
+
+    // team permissions
+    permission create_team = admin
+
+    // password vault permissions
+    permission create_password = admin
+
+    // offday permissions
+    permission create_offday = admin
+
+    // holiday permissions
+    permission create_holiday = admin
+
+    // sequence permissions
+    // required - sequences
+    permission create_sequence = admin + sdr
+
+    // inbox permissions
+    // required - sequences || warmer
+    permission create_inbox = admin
+
+    // meetings permissions
+    // required - meetings
+    permission create_meeting = admin + sdr
+
+    // billing permissions
+    permission manage_seat = admin
+}
+
+definition team {
+    relation organization: organization
+
+    permission edit = organization->admin
+    permission view = edit + organization->sdr
+    permission delete = organization->admin
+}
+
+definition offday {
+    relation organization: organization
+
+    permission edit = organization->admin
+    permission view = edit + organization->sdr
+    permission delete = organization->admin
+}
+
+definition holiday {
+    relation organization: organization
+
+    permission edit = organization->admin
+    permission view = edit + organization->sdr
+    permission delete = organization->admin
+}
+
+definition password {
+    relation organization: organization
+
+    permission edit = organization->admin
+    permission view = edit
+    permission delete = organization->admin
+}
+
+definition contact {
+    relation organization: organization
+    relation owner: member
+
+    permission edit = owner + organization->admin
+    permission view = edit + organization->apikey
+    permission delete = owner + organization->admin
+}
+
+definition inbox {
+    relation organization: organization
+    relation owner: member
+
+    permission edit = organization->admin
+    permission view = edit + organization->apikey
+    permission delete = organization->admin
+}
+
+// every permission check requires sequences product to be enabled
+definition sequence {
+    relation organization: organization
+    relation owner: member
+    relation sender: member | team
+    relation viewer: member
+    relation editor: member
+    relation contact: contact
+
+    permission edit = owner + editor + organization->admin
+    permission view = edit + viewer + sender + organization->apikey
+    permission delete = owner + organization->admin
+    permission upload_contact = edit + organization->apikey
+
+    // required - calls
+    permission create_call_step = edit
+
+    // synthetic relation
+    permission organization_admin = organization->admin
+    permission organization_apikey = organization->apikey
+}
+
+definition sequence/action {
+    relation sequence: sequence
+    relation assignee: member
+
+    permission edit = assignee
+    permission view = edit + sequence->organization_apikey + sequence->organization_admin
+}
+
+// every permission check requires meetings product to be enabled
+definition meeting {
+    relation organization: organization
+    relation owner: member
+
+    permission edit = owner
+    permission view = edit + organization->admin
+    permission delete = owner + organization->admin
+}

@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:15.3-alpine3.18
+    command:
+      [
+        "postgres",
+        "-c",
+        "max_locks_per_transaction=2000",
+        "-c",
+        "jit=off",
+        "-c",
+        "max_connections=200",
+        "-c",
+        "wal_level=logical",
+      ]
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U postgres -c 'select 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  spicedb-migrate:
+    image: authzed/spicedb:v1.31.0
+    command: "migrate head"
+    environment:
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: postgres://postgres:@postgres:5432/postgres?sslmode=disable
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  spicedb:
+    image: authzed/spicedb:v1.31.0
+    restart: on-failure
+    ports:
+      - 50051:50051
+    command: "serve --log-level=warn"
+    environment:
+      SPICEDB_GRPC_PRESHARED_KEY: spicedb-super-secret
+      SPICEDB_DATASTORE_ENGINE: postgres
+      SPICEDB_DATASTORE_CONN_URI: postgres://postgres:@postgres:5432/postgres?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
